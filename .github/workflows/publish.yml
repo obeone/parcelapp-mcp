@@ -1,0 +1,73 @@
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+# Publishing is irreversible: PyPI never lets a version number be reused, even
+# after a yank. So the build job re-runs the full check suite and refuses a tag
+# that disagrees with the version in pyproject.toml, and only then does the
+# publish job get an OIDC token.
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+
+      - run: uv sync --locked
+      - run: uv run ruff check
+      - run: uv run ruff format --check
+      - run: uv run mypy
+      - run: uv run pytest
+
+      - name: Build the sdist and the wheel
+        run: uv build
+
+      # The release tag is the only place the version is stated twice. A
+      # mismatch here means a tag pointing at the wrong commit, which would
+      # otherwise burn the version silently.
+      - name: Check the release tag against the package version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version="${TAG#v}"
+          if [ ! -f "dist/parcelapp_mcp-${version}.tar.gz" ]; then
+            echo "Tag ${TAG} implies version ${version}, but uv build produced:" >&2
+            ls -1 dist >&2
+            exit 1
+          fi
+
+      - name: Check the metadata renders on PyPI
+        run: uvx twine check --strict dist/*
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    # Configured at https://pypi.org/manage/project/parcelapp-mcp/settings/publishing/
+    # as a GitHub publisher: obeone/parcelapp-mcp, workflow publish.yml,
+    # environment pypi. No API token lives in this repository.
+    environment:
+      name: pypi
+      url: https://pypi.org/p/parcelapp-mcp
+    permissions:
+      id-token: write # mints the short-lived OIDC token Trusted Publishing exchanges
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@v1.14.2
