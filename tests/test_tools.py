@@ -6,6 +6,9 @@ are called here as plain functions rather than through ``mcp.call_tool``.
 
 from __future__ import annotations
 
+import json
+from typing import Any
+
 import httpx
 import pytest
 import respx
@@ -13,10 +16,10 @@ import respx
 from parcel_mcp.client import DELIVERIES_TTL, ParcelError
 from parcel_mcp.server import add_delivery, list_deliveries, search_carriers
 
-from .conftest import ADD_DELIVERY_URL, DELIVERIES_URL
+from .conftest import ADD_DELIVERY_URL, DELIVERIES_URL, FakeClock, MockCarriers
 
 
-def _deliveries_route(*items: dict) -> respx.Route:
+def _deliveries_route(*items: dict[str, Any]) -> respx.Route:
     """Register the deliveries route returning ``items``."""
     return respx.get(DELIVERIES_URL).mock(
         return_value=httpx.Response(200, json={"success": True, "deliveries": list(items)})
@@ -36,7 +39,9 @@ def _add_route() -> respx.Route:
 
 
 @respx.mock
-def test_list_deliveries_resolves_status_and_carrier(mock_carriers, delivery) -> None:
+def test_list_deliveries_resolves_status_and_carrier(
+    mock_carriers: MockCarriers, delivery: dict[str, Any]
+) -> None:
     mock_carriers()
     _deliveries_route(delivery)
 
@@ -52,9 +57,14 @@ def test_list_deliveries_resolves_status_and_carrier(mock_carriers, delivery) ->
 
 
 @respx.mock
-def test_list_deliveries_labels_an_unknown_status_code(mock_carriers, delivery) -> None:
-    """The status table is derived from observation, so codes may appear that
-    are not in it. They must not break the listing."""
+def test_list_deliveries_labels_an_unknown_status_code(
+    mock_carriers: MockCarriers, delivery: dict[str, Any]
+) -> None:
+    """Label an unrecognised status code instead of failing.
+
+    The table is derived from observation of the live API, so codes outside it
+    are expected rather than exceptional.
+    """
     mock_carriers()
     _deliveries_route({**delivery, "status_code": 99})
 
@@ -64,7 +74,7 @@ def test_list_deliveries_labels_an_unknown_status_code(mock_carriers, delivery) 
 
 
 @respx.mock
-def test_list_deliveries_passes_the_filter_mode(mock_carriers) -> None:
+def test_list_deliveries_passes_the_filter_mode(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     route = _deliveries_route()
 
@@ -74,7 +84,7 @@ def test_list_deliveries_passes_the_filter_mode(mock_carriers) -> None:
 
 
 @respx.mock
-def test_list_deliveries_handles_an_empty_account(mock_carriers) -> None:
+def test_list_deliveries_handles_an_empty_account(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     respx.get(DELIVERIES_URL).mock(return_value=httpx.Response(200, json={"success": True}))
 
@@ -86,7 +96,7 @@ def test_list_deliveries_handles_an_empty_account(mock_carriers) -> None:
 
 @respx.mock
 def test_list_deliveries_caches_then_refetches_after_the_ttl(
-    clock, mock_carriers, delivery
+    clock: FakeClock, mock_carriers: MockCarriers, delivery: dict[str, Any]
 ) -> None:
     mock_carriers()
     route = _deliveries_route(delivery)
@@ -101,7 +111,9 @@ def test_list_deliveries_caches_then_refetches_after_the_ttl(
 
 
 @respx.mock
-def test_list_deliveries_caches_each_filter_mode_separately(mock_carriers, delivery) -> None:
+def test_list_deliveries_caches_each_filter_mode_separately(
+    mock_carriers: MockCarriers, delivery: dict[str, Any]
+) -> None:
     mock_carriers()
     route = _deliveries_route(delivery)
 
@@ -112,7 +124,7 @@ def test_list_deliveries_caches_each_filter_mode_separately(mock_carriers, deliv
 
 
 @respx.mock
-def test_list_deliveries_propagates_the_rate_limit(mock_carriers) -> None:
+def test_list_deliveries_propagates_the_rate_limit(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     respx.get(DELIVERIES_URL).mock(return_value=httpx.Response(429, json={}))
 
@@ -128,7 +140,7 @@ def test_list_deliveries_propagates_the_rate_limit(mock_carriers) -> None:
 
 @respx.mock
 def test_add_delivery_rejects_an_unknown_carrier_without_spending_a_request(
-    mock_carriers,
+    mock_carriers: MockCarriers,
 ) -> None:
     mock_carriers()
     route = _add_route()
@@ -140,7 +152,9 @@ def test_add_delivery_rejects_an_unknown_carrier_without_spending_a_request(
 
 
 @respx.mock
-def test_add_delivery_demands_a_postcode_without_spending_a_request(mock_carriers) -> None:
+def test_add_delivery_demands_a_postcode_without_spending_a_request(
+    mock_carriers: MockCarriers,
+) -> None:
     mock_carriers()
     route = _add_route()
 
@@ -151,7 +165,9 @@ def test_add_delivery_demands_a_postcode_without_spending_a_request(mock_carrier
 
 
 @respx.mock
-def test_add_delivery_demands_an_email_without_spending_a_request(mock_carriers) -> None:
+def test_add_delivery_demands_an_email_without_spending_a_request(
+    mock_carriers: MockCarriers,
+) -> None:
     mock_carriers()
     route = _add_route()
 
@@ -162,7 +178,9 @@ def test_add_delivery_demands_an_email_without_spending_a_request(mock_carriers)
 
 
 @respx.mock
-def test_add_delivery_accepts_a_carrier_once_its_extra_field_is_given(mock_carriers) -> None:
+def test_add_delivery_accepts_a_carrier_once_its_extra_field_is_given(
+    mock_carriers: MockCarriers,
+) -> None:
     mock_carriers()
     route = _add_route()
 
@@ -173,9 +191,7 @@ def test_add_delivery_accepts_a_carrier_once_its_extra_field_is_given(mock_carri
 
 
 @respx.mock
-def test_add_delivery_normalises_the_submitted_body(mock_carriers) -> None:
-    import json
-
+def test_add_delivery_normalises_the_submitted_body(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     route = _add_route()
 
@@ -192,7 +208,7 @@ def test_add_delivery_normalises_the_submitted_body(mock_carriers) -> None:
 
 
 @respx.mock
-def test_add_delivery_reports_what_it_submitted(mock_carriers) -> None:
+def test_add_delivery_reports_what_it_submitted(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     _add_route()
 
@@ -204,7 +220,9 @@ def test_add_delivery_reports_what_it_submitted(mock_carriers) -> None:
 
 
 @respx.mock
-def test_add_delivery_invalidates_the_delivery_cache(mock_carriers, delivery) -> None:
+def test_add_delivery_invalidates_the_delivery_cache(
+    mock_carriers: MockCarriers, delivery: dict[str, Any]
+) -> None:
     mock_carriers()
     deliveries = _deliveries_route(delivery)
     _add_route()
@@ -219,7 +237,7 @@ def test_add_delivery_invalidates_the_delivery_cache(mock_carriers, delivery) ->
 
 
 @respx.mock
-def test_add_delivery_surfaces_an_upstream_rejection(mock_carriers) -> None:
+def test_add_delivery_surfaces_an_upstream_rejection(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     respx.post(ADD_DELIVERY_URL).mock(
         return_value=httpx.Response(
@@ -237,7 +255,7 @@ def test_add_delivery_surfaces_an_upstream_rejection(mock_carriers) -> None:
 
 
 @respx.mock
-def test_search_carriers_matches_on_name(mock_carriers) -> None:
+def test_search_carriers_matches_on_name(mock_carriers: MockCarriers) -> None:
     mock_carriers()
 
     result = search_carriers("la poste")
@@ -247,16 +265,19 @@ def test_search_carriers_matches_on_name(mock_carriers) -> None:
 
 
 @respx.mock
-def test_search_carriers_matches_on_code(mock_carriers) -> None:
+def test_search_carriers_matches_on_code(mock_carriers: MockCarriers) -> None:
     mock_carriers()
 
     assert search_carriers("pholder")["carriers"][0]["code"] == "pholder"
 
 
 @respx.mock
-def test_search_carriers_matches_on_a_name_variation(mock_carriers) -> None:
-    """Carriers trade under different names per country; the catalogue lists
-    them under name_variations and users will search with those."""
+def test_search_carriers_matches_on_a_name_variation(mock_carriers: MockCarriers) -> None:
+    """Match the alternative names a carrier trades under abroad.
+
+    The catalogue lists them under name_variations, and that is what a user
+    searching from another country will type.
+    """
     mock_carriers()
 
     result = search_carriers("chronopost france")
@@ -265,7 +286,7 @@ def test_search_carriers_matches_on_a_name_variation(mock_carriers) -> None:
 
 
 @respx.mock
-def test_search_carriers_names_the_required_extra_field(mock_carriers) -> None:
+def test_search_carriers_names_the_required_extra_field(mock_carriers: MockCarriers) -> None:
     mock_carriers()
 
     by_code = {c["code"]: c for c in search_carriers("")["carriers"]}
@@ -276,7 +297,7 @@ def test_search_carriers_names_the_required_extra_field(mock_carriers) -> None:
 
 
 @respx.mock
-def test_search_carriers_reports_the_total_beyond_the_limit(mock_carriers) -> None:
+def test_search_carriers_reports_the_total_beyond_the_limit(mock_carriers: MockCarriers) -> None:
     mock_carriers()
 
     result = search_carriers("", limit=2)
@@ -287,7 +308,9 @@ def test_search_carriers_reports_the_total_beyond_the_limit(mock_carriers) -> No
 
 
 @respx.mock
-def test_search_carriers_returns_nothing_for_an_unmatched_query(mock_carriers) -> None:
+def test_search_carriers_returns_nothing_for_an_unmatched_query(
+    mock_carriers: MockCarriers,
+) -> None:
     mock_carriers()
 
     result = search_carriers("no such carrier")

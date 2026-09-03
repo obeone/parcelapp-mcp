@@ -11,6 +11,7 @@ from parcel_mcp.server import list_deliveries, mcp, search_carriers
 
 
 async def main() -> None:
+    """Run the read-only checks against the live API."""
     print("tools:", [t.name for t in await mcp.list_tools()])
 
     print("\nsearch_carriers('la poste'):")

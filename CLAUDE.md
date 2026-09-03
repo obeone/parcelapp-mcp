@@ -27,6 +27,8 @@ The project uses `uv`. The API key comes from `envchain parcel` locally.
 uv sync                                       # install deps and the dev group
 uv run pytest                                 # the whole suite, no network
 uv run pytest tests/test_tools.py::test_add_delivery_demands_a_postcode_without_spending_a_request
+uv run ruff check && uv run ruff format       # lint, then format
+uv run mypy                                   # strict, and currently clean
 envchain parcel uv run parcelapp-mcp          # run the server over stdio
 envchain parcel uv run scripts/smoke_test.py  # live, read-only check (in-process)
 envchain parcel uv run scripts/stdio_test.py  # live, end-to-end MCP client over stdio
@@ -34,11 +36,14 @@ envchain parcel uv run scripts/stdio_test.py  # live, end-to-end MCP client over
 
 `uv run pytest` is the loop to work in: it never touches the network, so it costs
 nothing from either rate-limit budget. The two `scripts/` entries do hit the real API
-and are manual checks, not part of the suite. There is no ruff config or CI yet; that
-is item 3 of `PROMPT.md`.
+and are manual checks, not part of the suite.
 
 The suite mocks the upstream with `respx`. Every test runs under `@respx.mock`, so an
 unmocked request fails the test rather than escaping to the real API.
+
+CI (`.github/workflows/ci.yml`) runs those same three commands: lint and types once,
+tests across 3.10 to 3.13. It uses `uv sync --locked`, so a dependency change means
+committing the refreshed `uv.lock` alongside it.
 
 ## Rate limits drive everything
 
@@ -101,6 +106,9 @@ knows nothing about HTTP. Resist adding a third for three tools.
 - **`@mcp.tool()` returns the function unchanged.** It registers and hands back `fn`,
   so tests and scripts can call `list_deliveries(...)` directly without going through
   `mcp.call_tool`.
+- **`ToolAnnotations` fields are snake_case in Python.** `read_only_hint`, not
+  `readOnlyHint`. The camelCase spelling is the wire alias; pydantic accepts it, but
+  mypy cannot check it. The serialised JSON is identical either way.
 
 ## Auth
 

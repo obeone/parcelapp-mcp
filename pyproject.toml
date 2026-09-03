@@ -23,7 +23,50 @@ packages = ["src/parcel_mcp"]
 dev = [
     "pytest>=8",
     "respx>=0.21",
+    "ruff>=0.6",
+    "mypy>=1.11",
 ]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests", "scripts"]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "F",    # pyflakes
+    "I",    # import sorting
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "SIM",  # simplify
+    "D",    # pydocstyle: every function carries a doc header
+    "ANN",  # annotations on every signature
+    "RUF",
+]
+ignore = [
+    "D203",   # incompatible with D211
+    "D213",   # incompatible with D212
+    "ANN401", # Any is the honest annotation for the cache and the httpx passthrough
+]
+
+[tool.ruff.lint.per-file-ignores]
+# A test's name is its documentation; a docstring would only repeat it. Tests
+# that need an explanation carry one anyway, for the "why", not the "what".
+"tests/*" = ["D103"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.mypy]
+python_version = "3.10"
+files = ["src", "tests", "scripts"]
+strict = true
+
+[[tool.mypy.overrides]]
+# The MCP SDK ships types, but its decorators are generic enough that the
+# tool functions come back partially untyped. Revisit if that changes.
+module = ["mcp.*", "mcp_types.*", "respx.*"]
+ignore_missing_imports = true
