@@ -1,4 +1,4 @@
-# parcel-mcp
+# parcelapp-mcp
 
 MCP server for the [Parcel](https://parcelapp.net) delivery tracking app. Wraps the
 two external API endpoints available to premium users, plus a carrier-code lookup.
@@ -26,7 +26,7 @@ envchain --set parcel PARCEL_TOKEN
 ## Run
 
 ```bash
-envchain parcel uv run --directory /path/to/parcel-mcp parcel-mcp
+envchain parcel uv run --directory /path/to/parcelapp-mcp parcelapp-mcp
 ```
 
 ## Claude Desktop / Claude Code config
@@ -36,7 +36,7 @@ envchain parcel uv run --directory /path/to/parcel-mcp parcel-mcp
   "mcpServers": {
     "parcel": {
       "command": "envchain",
-      "args": ["parcel", "uv", "run", "--directory", "/path/to/parcel-mcp", "parcel-mcp"]
+      "args": ["parcel", "uv", "run", "--directory", "/path/to/parcelapp-mcp", "parcelapp-mcp"]
     }
   }
 }
@@ -49,7 +49,7 @@ Without envchain, drop the `envchain parcel` prefix and pass the key through `en
   "mcpServers": {
     "parcel": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/parcel-mcp", "parcel-mcp"],
+      "args": ["run", "--directory", "/path/to/parcelapp-mcp", "parcelapp-mcp"],
       "env": { "PARCEL_TOKEN": "..." }
     }
   }
@@ -71,5 +71,5 @@ Without envchain, drop the `envchain parcel` prefix and pass the key through `en
 Read-only; never calls `add_delivery`.
 
 ```bash
-envchain parcel uv run smoke_test.py
+envchain parcel uv run scripts/smoke_test.py
 ```

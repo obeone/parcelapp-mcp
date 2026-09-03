@@ -401,7 +401,7 @@ wheels = [
 ]
 
 [[package]]
-name = "parcel-mcp"
+name = "parcelapp-mcp"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
