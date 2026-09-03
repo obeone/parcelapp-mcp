@@ -6,7 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 An MCP server wrapping the [Parcel](https://parcelapp.net) delivery-tracking API,
 which premium users of the macOS/iOS app get access to. Two upstream endpoints plus a
-public carrier-code list, exposed as three MCP tools.
+public carrier-code list, exposed as three MCP tools and one resource template.
+
+It serves two transports. stdio reads the key from the environment. HTTP takes it
+per request, which turns process-global state into a leak and drives most of the
+design below.
 
 The upstream API is documented only by two help pages:
 
@@ -25,13 +29,15 @@ The project uses `uv`. The API key comes from `envchain parcel` locally.
 
 ```bash
 uv sync                                       # install deps and the dev group
-uv run pytest                                 # the whole suite, no network
+uv run pytest                                 # 80 tests, no network
 uv run pytest tests/test_tools.py::test_add_delivery_demands_a_postcode_without_spending_a_request
 uv run ruff check && uv run ruff format       # lint, then format
 uv run mypy                                   # strict, and currently clean
 envchain parcel uv run parcelapp-mcp          # run the server over stdio
 envchain parcel uv run scripts/smoke_test.py  # live, read-only check (in-process)
 envchain parcel uv run scripts/stdio_test.py  # live, end-to-end MCP client over stdio
+envchain parcel uv run scripts/http_test.py   # live, against a running HTTP server
+docker build -t parcelapp-mcp . && docker run -p 8000:8000 parcelapp-mcp
 ```
 
 `uv run pytest` is the loop to work in: it never touches the network, so it costs
@@ -79,12 +85,18 @@ knows nothing about HTTP. Resist adding a third for three tools.
   serves a cached view anyway, so this costs no freshness and protects the hourly
   budget). Carriers: 24 h. It is process-global state, so tests must call
   `clear_cache()` between cases.
+- `_requests` holds the rate-limit counters, per bucket and per caller, pruned on
+  read. `clear_rate_limits()` resets them for tests.
 - `ParcelError` lives here, next to what raises it, though it reaches into the SDK.
   See the invariant below.
 
 `src/parcel_mcp/server.py` — the MCP surface:
 
-- The `MCPServer` instance, the three tools, `main()`.
+- The `MCPServer` instance, the three tools, the resource template, the argparse
+  transport selection, `main()`.
+- `resolve_api_key(ctx)` decides where the key comes from: an `X-Parcel-Token` or
+  `Authorization: Bearer` header first, the environment as fallback. That fallback
+  is what lets one code path serve both transports.
 - The two translation tables, `STATUS_CODES` and `EXTRA_REQUIRED`, exist because the
   upstream API speaks in integers. Resolving them, along with carrier codes to names,
   is the entire value this server adds. Do not strip it in favour of raw passthrough.
@@ -109,6 +121,19 @@ knows nothing about HTTP. Resist adding a third for three tools.
 - **`ToolAnnotations` fields are snake_case in Python.** `read_only_hint`, not
   `readOnlyHint`. The camelCase spelling is the wire alias; pydantic accepts it, but
   mypy cannot check it. The serialised JSON is identical either way.
+- **Everything cached or counted is keyed by `key_fingerprint(key)`.** Over HTTP one
+  process serves several people; an unpartitioned cache would hand one caller's
+  parcels to another. The carrier catalogue is the deliberate exception, being
+  public. Never introduce a cache key without the fingerprint in it.
+- **`ctx: Context | None = None`, never a bare `Context`.** The SDK unwraps the union
+  and still injects it, while the default keeps the tools directly callable from the
+  tests and scripts. Verified, not assumed.
+- **A static resource cannot receive a `Context`.** The SDK refuses it outright, which
+  is why `parcel://deliveries/{filter_mode}` is a URI template: only templated
+  resources get a context, and without one a resource cannot read a per-request key.
+- **The client factory is `streamable_http_client`, and headers go through an
+  `httpx2.AsyncClient` passed as `http_client`.** Not `streamablehttp_client`, and not
+  a `headers=` argument; both are v1 spellings that no longer exist.
 
 ## Auth
 
