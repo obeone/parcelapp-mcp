@@ -8,6 +8,10 @@ Two upstream endpoints are wrapped:
 A third tool searches the public carrier-code list, since both endpoints speak
 in internal carrier codes rather than human names.
 
+This module holds the MCP surface only: the tool definitions, whose docstrings
+are the contract the model reads, and the two tables that turn the API's
+integers into words. All HTTP lives in :mod:`parcel_mcp.client`.
+
 Authentication: an API key generated at https://web.parcelapp.net, read from
 ``PARCEL_TOKEN`` (or ``PARCEL_API_KEY``) and sent in the ``api-key`` header.
 """
@@ -16,24 +20,24 @@ from __future__ import annotations
 
 import logging
 import os
-import time
 from typing import Any, Literal
 
-import httpx
 from mcp.server.mcpserver import MCPServer
-from mcp.server.mcpserver.exceptions import ToolError
 from mcp_types import ToolAnnotations
 
+from .client import (
+    API_BASE,
+    DELIVERIES_TTL,
+    ParcelError,
+    cached,
+    carrier_name,
+    clear_cache,
+    load_carriers,
+    request,
+    store,
+)
+
 LOG = logging.getLogger("parcel-mcp")
-
-API_BASE = "https://api.parcel.app/external"
-CARRIERS_URL = f"{API_BASE}/supported_carriers.json"
-
-# Upstream allows 20 deliveries calls per hour and always serves a cached
-# response anyway, so a short local cache costs nothing and buys headroom.
-DELIVERIES_TTL = 180.0
-CARRIERS_TTL = 86_400.0
-TIMEOUT = httpx.Timeout(20.0)
 
 STATUS_CODES: dict[int, str] = {
     0: "completed",
@@ -66,92 +70,6 @@ mcp = MCPServer(
     ),
 )
 
-_cache: dict[str, tuple[float, Any]] = {}
-
-
-class ParcelError(ToolError):
-    """Upstream returned success=false, or the transport failed.
-
-    Subclasses the SDK's ToolError so the message reaches the client instead of
-    being replaced by a generic "error executing tool".
-    """
-
-
-def _api_key() -> str:
-    key = os.environ.get("PARCEL_TOKEN") or os.environ.get("PARCEL_API_KEY")
-    if not key:
-        raise ParcelError(
-            "No API key. Set PARCEL_TOKEN (e.g. via `envchain parcel ...`); "
-            "generate one at https://web.parcelapp.net."
-        )
-    return key.strip()
-
-
-def _cached(key: str, ttl: float) -> Any | None:
-    entry = _cache.get(key)
-    if entry and time.monotonic() - entry[0] < ttl:
-        return entry[1]
-    return None
-
-
-def _store(key: str, value: Any) -> Any:
-    _cache[key] = (time.monotonic(), value)
-    return value
-
-
-def _request(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
-    """Call the Parcel API and unwrap its ``success``/``error_message`` envelope."""
-    headers = {"api-key": _api_key(), "accept": "application/json"}
-    try:
-        with httpx.Client(timeout=TIMEOUT) as client:
-            response = client.request(method, url, headers=headers, **kwargs)
-    except httpx.HTTPError as exc:  # network, DNS, timeout...
-        raise ParcelError(f"Request to Parcel failed: {exc}") from exc
-
-    if response.status_code == 401:
-        raise ParcelError("Parcel rejected the API key (HTTP 401).")
-    if response.status_code == 429:
-        raise ParcelError(
-            "Parcel rate limit hit (HTTP 429): 20 delivery listings per hour, "
-            "20 additions per day."
-        )
-
-    try:
-        payload = response.json()
-    except ValueError as exc:
-        raise ParcelError(
-            f"Parcel returned non-JSON content (HTTP {response.status_code})."
-        ) from exc
-
-    if not isinstance(payload, dict):
-        raise ParcelError("Parcel returned an unexpected JSON shape.")
-    if not payload.get("success", False):
-        raise ParcelError(
-            payload.get("error_message") or f"Parcel request failed (HTTP {response.status_code})."
-        )
-    return payload
-
-
-def _load_carriers() -> dict[str, dict[str, Any]]:
-    cached = _cached("carriers", CARRIERS_TTL)
-    if cached is not None:
-        return cached
-    try:
-        with httpx.Client(timeout=TIMEOUT) as client:
-            response = client.get(CARRIERS_URL)
-            response.raise_for_status()
-            carriers = response.json()
-    except (httpx.HTTPError, ValueError) as exc:
-        raise ParcelError(f"Could not fetch the carrier list: {exc}") from exc
-    return _store("carriers", carriers)
-
-
-def _carrier_name(code: str) -> str:
-    try:
-        return _load_carriers().get(code, {}).get("name", code)
-    except ParcelError:
-        return code
-
 
 @mcp.tool(
     annotations=ToolAnnotations(
@@ -176,21 +94,21 @@ def list_deliveries(filter_mode: Literal["recent", "active"] = "recent") -> dict
         (most useful first as returned by the carrier).
     """
     cache_key = f"deliveries:{filter_mode}"
-    payload = _cached(cache_key, DELIVERIES_TTL)
+    payload = cached(cache_key, DELIVERIES_TTL)
     if payload is None:
-        payload = _request(
+        payload = request(
             "GET",
             f"{API_BASE}/deliveries/",
             params={"filter_mode": filter_mode},
         )
-        _store(cache_key, payload)
+        store(cache_key, payload)
 
     deliveries = []
     for item in payload.get("deliveries") or []:
         enriched = dict(item)
         code = item.get("status_code")
         enriched["status"] = STATUS_CODES.get(code, f"unknown status code {code}")
-        enriched["carrier_name"] = _carrier_name(item.get("carrier_code", ""))
+        enriched["carrier_name"] = carrier_name(item.get("carrier_code", ""))
         deliveries.append(enriched)
 
     return {"filter_mode": filter_mode, "count": len(deliveries), "deliveries": deliveries}
@@ -245,7 +163,9 @@ def add_delivery(
     if email:
         body["email"] = email.strip()
 
-    carriers = _load_carriers()
+    # Validate locally first: the daily budget counts failed attempts, so a
+    # preventable error must never reach the network.
+    carriers = load_carriers()
     if body["carrier_code"] not in carriers:
         raise ParcelError(
             f"Unknown carrier code {body['carrier_code']!r}. "
@@ -255,22 +175,21 @@ def add_delivery(
     required = carriers[body["carrier_code"]].get("extra_required")
     if required == 1 and not postcode:
         raise ParcelError(
-            f"{_carrier_name(body['carrier_code'])} requires a postcode; pass `postcode`."
+            f"{carrier_name(body['carrier_code'])} requires a postcode; pass `postcode`."
         )
     if required == 2 and not email:
         raise ParcelError(
-            f"{_carrier_name(body['carrier_code'])} requires an email; pass `email`."
+            f"{carrier_name(body['carrier_code'])} requires an email; pass `email`."
         )
 
-    _request("POST", f"{API_BASE}/add-delivery/", json=body)
-    _cache.pop("deliveries:recent", None)
-    _cache.pop("deliveries:active", None)
+    request("POST", f"{API_BASE}/add-delivery/", json=body)
+    clear_cache("deliveries:recent", "deliveries:active")
 
     return {
         "added": True,
         "tracking_number": body["tracking_number"],
         "carrier_code": body["carrier_code"],
-        "carrier_name": _carrier_name(body["carrier_code"]),
+        "carrier_name": carrier_name(body["carrier_code"]),
         "description": body["description"],
         "note": "Tracking data appears only after the Parcel server's first update.",
     }
@@ -294,7 +213,7 @@ def search_carriers(query: str = "", limit: int = 25) -> dict[str, Any]:
         ``code``, ``name`` and, when the carrier needs it, ``extra_required``
         naming the additional field add_delivery must be given.
     """
-    carriers = _load_carriers()
+    carriers = load_carriers()
     needle = query.strip().lower()
 
     matches = []
