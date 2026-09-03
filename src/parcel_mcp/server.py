@@ -26,6 +26,7 @@ import argparse
 import json
 import logging
 import os
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
@@ -51,6 +52,13 @@ from .client import (
 )
 
 LOG = logging.getLogger("parcelapp-mcp")
+
+try:
+    # One source of truth for the version: pyproject, through the installed
+    # metadata. Hard-coding it here is how the two drift apart.
+    VERSION = version("parcelapp-mcp")
+except PackageNotFoundError:  # running straight from a source tree
+    VERSION = "0.0.0+unknown"
 
 # Headers the key may arrive in over HTTP, most explicit first.
 TOKEN_HEADER = "x-parcel-token"
@@ -79,7 +87,7 @@ EXTRA_REQUIRED: dict[int, str] = {
 
 mcp = MCPServer(
     "parcel",
-    version="0.2.0",
+    version=VERSION,
     instructions=(
         "Track and add parcel deliveries through the Parcel app API. "
         "Call search_carriers first when you need a carrier_code for add_delivery; "

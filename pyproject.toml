@@ -1,6 +1,6 @@
 [project]
 name = "parcelapp-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "MCP server for the Parcel delivery tracking API (parcelapp.net)"
 readme = "README.md"
 license = "MIT"
@@ -81,5 +81,5 @@ strict = true
 [[tool.mypy.overrides]]
 # The MCP SDK ships types, but its decorators are generic enough that the
 # tool functions come back partially untyped. Revisit if that changes.
-module = ["mcp.*", "mcp_types.*", "respx.*"]
+module = ["mcp.*", "mcp_types.*", "respx.*", "httpx2.*"]
 ignore_missing_imports = true
