@@ -24,10 +24,10 @@ backlog). Read it before starting work that touches project layout or scope.
 The project uses `uv`. The API key comes from `envchain parcel` locally.
 
 ```bash
-uv sync                                    # install deps into .venv
-envchain parcel uv run parcel-mcp          # run the server over stdio
-envchain parcel uv run smoke_test.py       # live, read-only check (in-process)
-envchain parcel uv run stdio_test.py       # live, end-to-end MCP client over stdio
+uv sync                                       # install deps into .venv
+envchain parcel uv run parcelapp-mcp          # run the server over stdio
+envchain parcel uv run scripts/smoke_test.py  # live, read-only check (in-process)
+envchain parcel uv run scripts/stdio_test.py  # live, end-to-end MCP client over stdio
 ```
 
 There is no pytest suite, ruff config, or CI yet; adding them is item 2 and 3 of
@@ -54,7 +54,7 @@ Two consequences the code depends on:
 
 ## Architecture
 
-Everything currently lives in `parcel_mcp/server.py` (~330 lines):
+Everything currently lives in `src/parcel_mcp/server.py` (~330 lines):
 
 - `_request()` is the single HTTP chokepoint. It injects the `api-key` header,
   maps 401 and 429 to explicit messages, and unwraps the upstream

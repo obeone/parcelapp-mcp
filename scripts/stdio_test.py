@@ -13,7 +13,7 @@ from mcp.client.stdio import stdio_client
 async def main() -> None:
     params = StdioServerParameters(
         command="uv",
-        args=["run", "--quiet", "parcel-mcp"],
+        args=["run", "--quiet", "parcelapp-mcp"],
         env=dict(os.environ),
     )
     async with stdio_client(params) as (read, write):
