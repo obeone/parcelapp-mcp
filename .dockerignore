@@ -1,0 +1,20 @@
+# Allowlist: exclude everything, then admit only what the build needs.
+#
+# Chosen over a blocklist because the set is five entries and stable, while
+# the working tree accumulates things that must never reach a build context:
+# .venv/, .omc/ state, .agent.lock, editor droppings. A blocklist protects
+# only against what someone remembered to list.
+#
+# Adding a source directory means adding its `!` line below.
+
+*
+
+!pyproject.toml
+!uv.lock
+!README.md
+!LICENSE
+!src/
+
+# Re-exclude what would otherwise ride along inside src/.
+**/__pycache__/
+**/*.py[co]
