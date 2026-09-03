@@ -24,15 +24,21 @@ backlog). Read it before starting work that touches project layout or scope.
 The project uses `uv`. The API key comes from `envchain parcel` locally.
 
 ```bash
-uv sync                                       # install deps into .venv
+uv sync                                       # install deps and the dev group
+uv run pytest                                 # the whole suite, no network
+uv run pytest tests/test_tools.py::test_add_delivery_demands_a_postcode_without_spending_a_request
 envchain parcel uv run parcelapp-mcp          # run the server over stdio
 envchain parcel uv run scripts/smoke_test.py  # live, read-only check (in-process)
 envchain parcel uv run scripts/stdio_test.py  # live, end-to-end MCP client over stdio
 ```
 
-There is no pytest suite, ruff config, or CI yet; adding them is item 2 and 3 of
-`PROMPT.md`. Once pytest exists, a single test runs with
-`uv run pytest tests/test_x.py::test_name`.
+`uv run pytest` is the loop to work in: it never touches the network, so it costs
+nothing from either rate-limit budget. The two `scripts/` entries do hit the real API
+and are manual checks, not part of the suite. There is no ruff config or CI yet; that
+is item 3 of `PROMPT.md`.
+
+The suite mocks the upstream with `respx`. Every test runs under `@respx.mock`, so an
+unmocked request fails the test rather than escaping to the real API.
 
 ## Rate limits drive everything
 
