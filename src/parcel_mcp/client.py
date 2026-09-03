@@ -1,8 +1,19 @@
 """HTTP access to the Parcel (parcelapp.net) external API.
 
-Everything that talks to the network lives here: the API-key lookup, the
-``success``/``error_message`` envelope handling, the carrier catalogue, and the
-small TTL cache that keeps the tools inside the upstream rate limits.
+Everything that talks to the network lives here: API-key handling, the
+``success``/``error_message`` envelope, the carrier catalogue, the TTL cache
+and the local rate-limit counters.
+
+Two constraints shape this module.
+
+Parcel sends no rate-limit headers of any kind, only ``Date``. A caller that
+wants to pace itself has nothing to read, so the budget reported by
+:func:`budget` is counted here and is an estimate, never an authority.
+
+The server can also run over HTTP, where each request carries its own API key.
+Anything cached or counted is therefore partitioned by a fingerprint of the
+key: one caller's deliveries must never be served to another. The carrier
+catalogue is the exception, since it is public and unauthenticated.
 
 This module knows nothing about MCP. The one exception is ``ParcelError``,
 which subclasses the SDK's ``ToolError`` so that failure messages survive the
@@ -11,6 +22,7 @@ trip to the client, and that is a deliberate trade.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import time
 from typing import Any
@@ -27,8 +39,21 @@ DELIVERIES_TTL = 180.0
 CARRIERS_TTL = 86_400.0
 TIMEOUT = httpx.Timeout(20.0)
 
+DELIVERIES_BUCKET = "deliveries"
+ADD_BUCKET = "add_delivery"
+
+# bucket -> (requests allowed, window in seconds, window as a word).
+# Transcribed from the two help pages; the API itself never states them.
+BUCKETS: dict[str, tuple[int, float, str]] = {
+    DELIVERIES_BUCKET: (20, 3600.0, "hour"),
+    ADD_BUCKET: (20, 86_400.0, "day"),
+}
+
 # key -> (monotonic timestamp of the write, value)
 _cache: dict[str, tuple[float, Any]] = {}
+
+# "bucket:fingerprint" -> monotonic timestamps of the requests this process sent
+_requests: dict[str, list[float]] = {}
 
 
 class ParcelError(ToolError):
@@ -42,6 +67,9 @@ class ParcelError(ToolError):
 def api_key() -> str:
     """Read the Parcel API key from the environment.
 
+    This is the stdio path. Over HTTP the key arrives per request instead, and
+    the environment is only the fallback.
+
     Returns:
         The key from ``PARCEL_TOKEN``, falling back to ``PARCEL_API_KEY``.
 
@@ -51,10 +79,27 @@ def api_key() -> str:
     key = os.environ.get("PARCEL_TOKEN") or os.environ.get("PARCEL_API_KEY")
     if not key:
         raise ParcelError(
-            "No API key. Set PARCEL_TOKEN (e.g. via `envchain parcel ...`); "
-            "generate one at https://web.parcelapp.net."
+            "No API key. Set PARCEL_TOKEN (e.g. via `envchain parcel ...`), or, when "
+            "running over HTTP, send it as an `X-Parcel-Token` or `Authorization: "
+            "Bearer` header. Generate one at https://web.parcelapp.net."
         )
     return key.strip()
+
+
+def key_fingerprint(key: str) -> str:
+    """Derive a short, stable, non-reversible identifier for an API key.
+
+    Used to partition the cache and the request counters between callers when
+    several share one HTTP server. The key itself is never used as a dictionary
+    key and never logged, so a cache dump cannot leak a credential.
+
+    Args:
+        key: The caller's API key.
+
+    Returns:
+        The first 16 hex characters of the key's SHA-256 digest.
+    """
+    return hashlib.sha256(key.encode()).hexdigest()[:16]
 
 
 def cached(key: str, ttl: float) -> Any | None:
@@ -72,6 +117,22 @@ def cached(key: str, ttl: float) -> Any | None:
     if entry and time.monotonic() - entry[0] < ttl:
         return entry[1]
     return None
+
+
+def cache_age(key: str) -> float | None:
+    """Return how many seconds ago ``key`` was written, or None if absent.
+
+    Reported to callers so they can tell a fresh fetch from a cached one
+    instead of guessing.
+
+    Args:
+        key: Cache key.
+
+    Returns:
+        Age in seconds, or None when the key was never written.
+    """
+    entry = _cache.get(key)
+    return None if entry is None else time.monotonic() - entry[0]
 
 
 def store(key: str, value: Any) -> Any:
@@ -102,7 +163,60 @@ def clear_cache(*keys: str) -> None:
         _cache.pop(key, None)
 
 
-def request(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+def clear_rate_limits() -> None:
+    """Forget every recorded request. For tests; the counters are per-process."""
+    _requests.clear()
+
+
+def record_request(bucket: str, fingerprint: str) -> None:
+    """Note that one request against ``bucket`` was just spent.
+
+    Args:
+        bucket: One of the keys of :data:`BUCKETS`.
+        fingerprint: The caller's key fingerprint, so budgets do not bleed
+            between the callers of a shared HTTP server.
+    """
+    _requests.setdefault(f"{bucket}:{fingerprint}", []).append(time.monotonic())
+
+
+def budget(bucket: str, fingerprint: str) -> dict[str, Any]:
+    """Report how much of a rate-limit budget this process has spent.
+
+    Honest about what it cannot know: Parcel publishes no counter, so this
+    counts only the requests this server sent, in this process, since it
+    started. The Parcel app itself and any other client using the same key
+    spend from the same budget invisibly, which is why the figure is called
+    ``remaining_at_most`` rather than ``remaining``.
+
+    Args:
+        bucket: One of the keys of :data:`BUCKETS`.
+        fingerprint: The caller's key fingerprint.
+
+    Returns:
+        A dict with the documented limit and its window, the number of requests
+        this server sent inside that window, an upper bound on what is left,
+        and a note carrying the caveat to whoever reads the tool output.
+    """
+    limit, window, unit = BUCKETS[bucket]
+    entry_key = f"{bucket}:{fingerprint}"
+    cutoff = time.monotonic() - window
+    # Prune while reading: the windows are short and the volumes tiny.
+    recent = [t for t in _requests.get(entry_key, []) if t > cutoff]
+    _requests[entry_key] = recent
+    return {
+        "limit": limit,
+        "per": unit,
+        "spent_by_this_server": len(recent),
+        "remaining_at_most": max(limit - len(recent), 0),
+        "note": (
+            "Counted locally: Parcel returns no rate-limit headers. This server sees "
+            "only its own requests since it started, so the real remaining budget may "
+            "be lower if the Parcel app or another client shares this key."
+        ),
+    }
+
+
+def request(method: str, url: str, key: str, **kwargs: Any) -> dict[str, Any]:
     """Call the Parcel API and unwrap its ``success``/``error_message`` envelope.
 
     The single HTTP chokepoint: every upstream failure mode is normalised into a
@@ -111,6 +225,7 @@ def request(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
     Args:
         method: HTTP method.
         url: Absolute URL.
+        key: The caller's API key, sent in the ``api-key`` header.
         **kwargs: Passed through to httpx (``params``, ``json``, ...).
 
     Returns:
@@ -120,7 +235,7 @@ def request(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         ParcelError: Transport failure, HTTP 401 or 429, a non-JSON body, an
             unexpected JSON shape, or ``success: false``.
     """
-    headers = {"api-key": api_key(), "accept": "application/json"}
+    headers = {"api-key": key, "accept": "application/json"}
     try:
         with httpx.Client(timeout=TIMEOUT) as client:
             response = client.request(method, url, headers=headers, **kwargs)
@@ -153,8 +268,8 @@ def request(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
 def load_carriers() -> dict[str, dict[str, Any]]:
     """Fetch the public carrier catalogue, cached for 24 hours.
 
-    The list is unauthenticated and not rate-limited, but it is large and
-    changes rarely, hence the long TTL.
+    The list is unauthenticated and not rate-limited, so unlike the delivery
+    data its cache is shared across callers.
 
     Returns:
         Carrier code -> carrier record, as served by Parcel.

@@ -22,6 +22,8 @@ MockCarriers = Callable[..., respx.Route]
 
 # Obviously fake, and shaped nothing like a real Parcel key.
 FAKE_TOKEN = "token-for-tests-only"
+# A second caller, for the HTTP case where one process serves several keys.
+OTHER_TOKEN = "another-token-for-tests-only"
 
 DELIVERIES_URL = f"{client.API_BASE}/deliveries/"
 ADD_DELIVERY_URL = f"{client.API_BASE}/add-delivery/"
@@ -44,12 +46,13 @@ CARRIERS: dict[str, dict[str, Any]] = {
 def isolated_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     """Give every test a fake API key and an empty cache.
 
-    The cache is process-global module state, so without this a cached response
-    would leak from one test into the next.
+    The cache and the rate-limit counters are process-global module state, so
+    without this they would leak from one test into the next.
     """
     monkeypatch.setenv("PARCEL_TOKEN", FAKE_TOKEN)
     monkeypatch.delenv("PARCEL_API_KEY", raising=False)
     client.clear_cache()
+    client.clear_rate_limits()
 
 
 class FakeClock:
