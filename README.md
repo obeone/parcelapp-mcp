@@ -76,9 +76,11 @@ The image holds no key. Every caller sends their own, so the container is safe
 to share.
 
 ```bash
-docker build -t parcelapp-mcp .
+docker build -t parcelapp-mcp --build-arg VERSION="$(uv version --short)" .
 docker run -d --name parcel -p 8000:8000 parcelapp-mcp
 ```
+
+`VERSION` only stamps the OCI label; the build works without it.
 
 ```bash
 curl -sS -X POST http://127.0.0.1:8000/mcp \
