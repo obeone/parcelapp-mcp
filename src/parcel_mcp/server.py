@@ -72,9 +72,7 @@ mcp = MCPServer(
 
 
 @mcp.tool(
-    annotations=ToolAnnotations(
-        title="List deliveries", readOnlyHint=True, openWorldHint=True
-    )
+    annotations=ToolAnnotations(title="List deliveries", read_only_hint=True, open_world_hint=True)
 )
 def list_deliveries(filter_mode: Literal["recent", "active"] = "recent") -> dict[str, Any]:
     """List the user's deliveries tracked in the Parcel app.
@@ -117,10 +115,10 @@ def list_deliveries(filter_mode: Literal["recent", "active"] = "recent") -> dict
 @mcp.tool(
     annotations=ToolAnnotations(
         title="Add delivery",
-        readOnlyHint=False,
-        destructiveHint=False,
-        idempotentHint=False,
-        openWorldHint=True,
+        read_only_hint=False,
+        destructive_hint=False,
+        idempotent_hint=False,
+        open_world_hint=True,
     )
 )
 def add_delivery(
@@ -178,9 +176,7 @@ def add_delivery(
             f"{carrier_name(body['carrier_code'])} requires a postcode; pass `postcode`."
         )
     if required == 2 and not email:
-        raise ParcelError(
-            f"{carrier_name(body['carrier_code'])} requires an email; pass `email`."
-        )
+        raise ParcelError(f"{carrier_name(body['carrier_code'])} requires an email; pass `email`.")
 
     request("POST", f"{API_BASE}/add-delivery/", json=body)
     clear_cache("deliveries:recent", "deliveries:active")
@@ -196,9 +192,7 @@ def add_delivery(
 
 
 @mcp.tool(
-    annotations=ToolAnnotations(
-        title="Search carriers", readOnlyHint=True, openWorldHint=True
-    )
+    annotations=ToolAnnotations(title="Search carriers", read_only_hint=True, open_world_hint=True)
 )
 def search_carriers(query: str = "", limit: int = 25) -> dict[str, Any]:
     """Find Parcel carrier codes by name or code.

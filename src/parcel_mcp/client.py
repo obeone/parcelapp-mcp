@@ -131,8 +131,7 @@ def request(method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         raise ParcelError("Parcel rejected the API key (HTTP 401).")
     if response.status_code == 429:
         raise ParcelError(
-            "Parcel rate limit hit (HTTP 429): 20 delivery listings per hour, "
-            "20 additions per day."
+            "Parcel rate limit hit (HTTP 429): 20 delivery listings per hour, 20 additions per day."
         )
 
     try:
@@ -163,17 +162,18 @@ def load_carriers() -> dict[str, dict[str, Any]]:
     Raises:
         ParcelError: The list could not be fetched or decoded.
     """
-    hit = cached("carriers", CARRIERS_TTL)
+    hit: dict[str, dict[str, Any]] | None = cached("carriers", CARRIERS_TTL)
     if hit is not None:
         return hit
     try:
         with httpx.Client(timeout=TIMEOUT) as client:
             response = client.get(CARRIERS_URL)
             response.raise_for_status()
-            carriers = response.json()
+            carriers: dict[str, dict[str, Any]] = response.json()
     except (httpx.HTTPError, ValueError) as exc:
         raise ParcelError(f"Could not fetch the carrier list: {exc}") from exc
-    return store("carriers", carriers)
+    store("carriers", carriers)
+    return carriers
 
 
 def carrier_name(code: str) -> str:
@@ -189,6 +189,9 @@ def carrier_name(code: str) -> str:
         The carrier's name, or ``code`` when it is unknown or unreachable.
     """
     try:
-        return load_carriers().get(code, {}).get("name", code)
+        name = load_carriers().get(code, {}).get("name", code)
     except ParcelError:
         return code
+    # The catalogue is undocumented: a missing or null name falls back to the
+    # code rather than rendering as "None".
+    return name if isinstance(name, str) else code

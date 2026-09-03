@@ -8,13 +8,17 @@ requests per day upstream, failed attempts included.
 
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 import pytest
 import respx
 
 from parcel_mcp import client
+
+# The mock_carriers fixture hands back a route-registering callable.
+MockCarriers = Callable[..., respx.Route]
 
 # Obviously fake, and shaped nothing like a real Parcel key.
 FAKE_TOKEN = "token-for-tests-only"
@@ -52,6 +56,7 @@ class FakeClock:
     """A monotonic clock the tests can move forward by hand."""
 
     def __init__(self, start: float = 1000.0) -> None:
+        """Start the clock at ``start`` seconds."""
         self.now = start
 
     def monotonic(self) -> float:
@@ -80,7 +85,7 @@ def clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
 
 
 @pytest.fixture
-def mock_carriers() -> Callable[..., respx.Route]:
+def mock_carriers() -> MockCarriers:
     """Return a helper registering the carrier-catalogue route.
 
     Call it from inside an active respx mock. The catalogue is fetched lazily by

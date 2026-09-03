@@ -9,7 +9,7 @@ import respx
 from parcel_mcp import client
 from parcel_mcp.client import ParcelError
 
-from .conftest import DELIVERIES_URL, FAKE_TOKEN
+from .conftest import DELIVERIES_URL, FAKE_TOKEN, FakeClock, MockCarriers
 
 
 def test_api_key_reads_parcel_token() -> None:
@@ -30,9 +30,7 @@ def test_missing_api_key_names_the_variable_to_set(monkeypatch: pytest.MonkeyPat
 
 @respx.mock
 def test_request_sends_the_key_as_a_header() -> None:
-    route = respx.get(DELIVERIES_URL).mock(
-        return_value=httpx.Response(200, json={"success": True})
-    )
+    route = respx.get(DELIVERIES_URL).mock(return_value=httpx.Response(200, json={"success": True}))
     client.request("GET", DELIVERIES_URL)
     assert route.calls.last.request.headers["api-key"] == FAKE_TOKEN
 
@@ -99,7 +97,7 @@ def test_transport_failure_becomes_a_parcel_error() -> None:
         client.request("GET", DELIVERIES_URL)
 
 
-def test_cache_returns_the_value_until_the_ttl_lapses(clock) -> None:
+def test_cache_returns_the_value_until_the_ttl_lapses(clock: FakeClock) -> None:
     client.store("k", "value")
     assert client.cached("k", ttl=10.0) == "value"
 
@@ -131,7 +129,7 @@ def test_clear_cache_without_arguments_empties_everything() -> None:
 
 
 @respx.mock
-def test_carrier_catalogue_is_fetched_once(mock_carriers) -> None:
+def test_carrier_catalogue_is_fetched_once(mock_carriers: MockCarriers) -> None:
     route = mock_carriers()
     client.load_carriers()
     client.load_carriers()
@@ -139,26 +137,26 @@ def test_carrier_catalogue_is_fetched_once(mock_carriers) -> None:
 
 
 @respx.mock
-def test_carrier_catalogue_failure_is_reported(mock_carriers) -> None:
+def test_carrier_catalogue_failure_is_reported(mock_carriers: MockCarriers) -> None:
     mock_carriers(status_code=500)
     with pytest.raises(ParcelError, match="Could not fetch the carrier list"):
         client.load_carriers()
 
 
 @respx.mock
-def test_carrier_name_resolves_a_known_code(mock_carriers) -> None:
+def test_carrier_name_resolves_a_known_code(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     assert client.carrier_name("lp") == "La Poste"
 
 
 @respx.mock
-def test_carrier_name_falls_back_to_the_code(mock_carriers) -> None:
+def test_carrier_name_falls_back_to_the_code(mock_carriers: MockCarriers) -> None:
     """An unreachable catalogue must degrade a listing, not break it."""
     mock_carriers(status_code=500)
     assert client.carrier_name("lp") == "lp"
 
 
 @respx.mock
-def test_carrier_name_falls_back_for_an_unknown_code(mock_carriers) -> None:
+def test_carrier_name_falls_back_for_an_unknown_code(mock_carriers: MockCarriers) -> None:
     mock_carriers()
     assert client.carrier_name("does-not-exist") == "does-not-exist"
