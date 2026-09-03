@@ -37,10 +37,18 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 EXPOSE 8000
 
-LABEL org.opencontainers.image.source="https://github.com/obeone/parcelapp-mcp" \
-      org.opencontainers.image.description="MCP server for the Parcel delivery tracking API" \
+# The one label that cannot read itself from the package metadata, so it is an
+# ARG: pass --build-arg VERSION=$(uv version --short) to keep it truthful.
+ARG VERSION=0.2.0
+
+LABEL org.opencontainers.image.title="parcelapp-mcp" \
+      org.opencontainers.image.description="MCP server for the Parcel delivery tracking app: read and add deliveries over stdio or HTTP" \
+      org.opencontainers.image.source="https://github.com/obeone/parcelapp-mcp" \
+      org.opencontainers.image.documentation="https://github.com/obeone/parcelapp-mcp#readme" \
+      org.opencontainers.image.url="https://github.com/obeone/parcelapp-mcp" \
+      org.opencontainers.image.authors="Grégoire Compagnon <obeone@obeone.org>" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.version="0.2.0"
+      org.opencontainers.image.version="${VERSION}"
 
 # There is no /health endpoint, and a GET on /mcp opens an SSE stream that
 # never returns, so neither would work. This performs a real MCP initialize
