@@ -51,6 +51,13 @@ CI (`.github/workflows/ci.yml`) runs those same three commands: lint and types o
 tests across 3.10 to 3.13. It uses `uv sync --locked`, so a dependency change means
 committing the refreshed `uv.lock` alongside it.
 
+Publishing (`.github/workflows/publish.yml`) fires on a published GitHub release and
+goes to PyPI through Trusted Publishing, so there is no API token in the repository.
+Cutting a release is therefore: bump `version` in `pyproject.toml`, commit, then
+`gh release create v<version> --generate-notes`. The tag must match the version or the
+build job fails before anything is uploaded, because PyPI never lets a version number
+be reused.
+
 ## Rate limits drive everything
 
 | Endpoint | Limit |
