@@ -54,19 +54,30 @@ Two consequences the code depends on:
 
 ## Architecture
 
-Everything currently lives in `src/parcel_mcp/server.py` (~330 lines):
+Two modules, split along one line: `client.py` knows nothing about MCP, `server.py`
+knows nothing about HTTP. Resist adding a third for three tools.
 
-- `_request()` is the single HTTP chokepoint. It injects the `api-key` header,
+`src/parcel_mcp/client.py` — the network:
+
+- `request()` is the single HTTP chokepoint. It injects the `api-key` header,
   maps 401 and 429 to explicit messages, and unwraps the upstream
   `{"success": bool, "error_message": str}` envelope. Every upstream failure mode is
   normalised here, so tools never inspect status codes themselves.
-- `_cache` is a module-level `dict[str, tuple[float, Any]]` keyed by a string, with
-  per-call TTLs via `_cached()` / `_store()`. Deliveries: 180 s (upstream serves a
-  cached view anyway, so this costs no freshness and protects the hourly budget).
-  Carriers: 24 h. `add_delivery` invalidates both delivery cache keys on success.
+- `_cache` is a module-level `dict[str, tuple[float, Any]]`, with per-call TTLs via
+  `cached()` / `store()` and eviction via `clear_cache()`. Deliveries: 180 s (upstream
+  serves a cached view anyway, so this costs no freshness and protects the hourly
+  budget). Carriers: 24 h. It is process-global state, so tests must call
+  `clear_cache()` between cases.
+- `ParcelError` lives here, next to what raises it, though it reaches into the SDK.
+  See the invariant below.
+
+`src/parcel_mcp/server.py` — the MCP surface:
+
+- The `MCPServer` instance, the three tools, `main()`.
 - The two translation tables, `STATUS_CODES` and `EXTRA_REQUIRED`, exist because the
   upstream API speaks in integers. Resolving them, along with carrier codes to names,
   is the entire value this server adds. Do not strip it in favour of raw passthrough.
+- `add_delivery`'s local validation stays here, beside the error messages it produces.
 
 ### Non-obvious invariants
 
@@ -79,8 +90,11 @@ Everything currently lives in `src/parcel_mcp/server.py` (~330 lines):
   Keep them describing behaviour, arguments and rate limits, not implementation.
 - **Errors name the fix.** "Bpost requires a postcode; pass `postcode`" beats
   "invalid request". Any new error path follows that shape.
-- `_carrier_name()` swallows `ParcelError` and falls back to the raw code, so a
+- `carrier_name()` swallows `ParcelError` and falls back to the raw code, so a
   carrier-list fetch failure degrades `list_deliveries` instead of breaking it.
+- **`@mcp.tool()` returns the function unchanged.** It registers and hands back `fn`,
+  so tests and scripts can call `list_deliveries(...)` directly without going through
+  `mcp.call_tool`.
 
 ## Auth
 
