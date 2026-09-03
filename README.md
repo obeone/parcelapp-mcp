@@ -66,10 +66,20 @@ Without envchain, drop the `envchain parcel` prefix and pass the key through `en
 - Some carriers require an extra field (postcode or email). `search_carriers` reports
   which, and `add_delivery` refuses to burn a daily request when it is missing.
 
-## Smoke test
-
-Read-only; never calls `add_delivery`.
+## Development
 
 ```bash
-envchain parcel uv run scripts/smoke_test.py
+uv sync
+uv run pytest
+```
+
+The suite mocks the upstream with `respx` and never touches the network, so it costs
+nothing from either rate-limit budget.
+
+Two live scripts remain as manual checks. Both are read-only: neither calls
+`add_delivery`, which is capped at 20 requests per day including failures.
+
+```bash
+envchain parcel uv run scripts/smoke_test.py   # in-process
+envchain parcel uv run scripts/stdio_test.py   # through a real MCP client
 ```
