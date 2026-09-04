@@ -22,8 +22,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     uv sync --locked --no-install-project --no-dev
 
+# The package version comes from the nearest git tag, but .dockerignore keeps
+# .git out of the build context on purpose, so hatchling cannot read it here.
+# This ARG is the only way in, and a build without it honestly reports 0.0.0
+# rather than a stale hardcoded number:
+#   docker build --build-arg VERSION=$(git describe --tags --abbrev=0 | sed s/^v//) .
+# It feeds both the install below and the OCI label at the end of this stage.
+ARG VERSION=0.0.0
+
 COPY --chown=app:app . .
-RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-dev
+RUN --mount=type=cache,target=/root/.cache/uv \
+    SETUPTOOLS_SCM_PRETEND_VERSION=${VERSION} uv sync --locked --no-dev
 
 # Hand over the workdir, not the dependency tree, then drop privileges last.
 RUN chown app:app /app
@@ -36,10 +45,6 @@ ENV PATH="/app/.venv/bin:$PATH" \
     PARCEL_PATH=/mcp
 
 EXPOSE 8000
-
-# The one label that cannot read itself from the package metadata, so it is an
-# ARG: pass --build-arg VERSION=$(uv version --short) to keep it truthful.
-ARG VERSION=0.2.0
 
 LABEL org.opencontainers.image.title="parcelapp-mcp" \
       org.opencontainers.image.description="MCP server for the Parcel delivery tracking app: read and add deliveries over stdio or HTTP" \
