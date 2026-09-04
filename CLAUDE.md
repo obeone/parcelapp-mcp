@@ -33,11 +33,13 @@ uv run pytest                                 # 80 tests, no network
 uv run pytest tests/test_tools.py::test_add_delivery_demands_a_postcode_without_spending_a_request
 uv run ruff check && uv run ruff format       # lint, then format
 uv run mypy                                   # strict, and currently clean
+uvx git-cliff --unreleased                    # preview the next changelog section
 envchain parcel uv run parcelapp-mcp          # run the server over stdio
 envchain parcel uv run scripts/smoke_test.py  # live, read-only check (in-process)
 envchain parcel uv run scripts/stdio_test.py  # live, end-to-end MCP client over stdio
 envchain parcel uv run scripts/http_test.py   # live, against a running HTTP server
-docker build -t parcelapp-mcp . && docker run -p 8000:8000 parcelapp-mcp
+docker build --build-arg VERSION=$(git describe --tags --abbrev=0 | sed s/^v//) \
+  -t parcelapp-mcp . && docker run -p 8000:8000 parcelapp-mcp
 ```
 
 `uv run pytest` is the loop to work in: it never touches the network, so it costs
@@ -51,12 +53,35 @@ CI (`.github/workflows/ci.yml`) runs those same three commands: lint and types o
 tests across 3.10 to 3.13. It uses `uv sync --locked`, so a dependency change means
 committing the refreshed `uv.lock` alongside it.
 
-Publishing (`.github/workflows/publish.yml`) fires on a published GitHub release and
-goes to PyPI through Trusted Publishing, so there is no API token in the repository.
-Cutting a release is therefore: bump `version` in `pyproject.toml`, commit, then
-`gh release create v<version> --generate-notes`. The tag must match the version or the
-build job fails before anything is uploaded, because PyPI never lets a version number
-be reused.
+## Releasing
+
+A tag is the whole trigger. `git tag v0.3.0 && git push --tags` runs
+`.github/workflows/publish.yml`, which checks, builds, uploads to PyPI through
+Trusted Publishing (no API token in the repository), creates the GitHub release with
+generated notes, and commits the refreshed `CHANGELOG.md` back to `main`.
+
+Nothing is versioned by hand. `hatch-vcs` derives the version from the nearest git
+tag, which has three consequences worth knowing before debugging a wrong number:
+
+- **Every checkout that builds this package needs `fetch-depth: 0`.** A shallow clone
+  has no tags, so the build quietly produces a `0.1.devN` version instead of failing.
+  The build job's tag check exists to catch exactly that.
+- **A build with no `.git` at all fails outright.** `.dockerignore` keeps `.git` out of
+  the build context on purpose, so the Dockerfile passes the version in through
+  `--build-arg VERSION=…`, which it forwards as `SETUPTOOLS_SCM_PRETEND_VERSION`. A
+  `docker build` without that argument reports `0.0.0` rather than lying. Beware
+  the warm uv cache mount: it can hand back a wheel built under a previous
+  `VERSION`, so pass `--no-cache` when the number in the image actually matters.
+- **A dirty working tree taints the version** with a `.dYYYYMMDD` suffix. Harmless
+  locally, but it means a release must be built from a clean checkout.
+
+The changelog is generated from the Conventional Commits by `git-cliff`, configured in
+`cliff.toml`. The same config produces `CHANGELOG.md` and the body of each GitHub
+release, so the two cannot drift. Preview it locally with `uvx git-cliff --unreleased`.
+
+The workflow is deliberately one file rather than a `release.yml` feeding a
+`publish.yml`: GitHub suppresses the event cascade from anything the `GITHUB_TOKEN`
+creates, so a release made by CI would never fire a `release: published` trigger.
 
 ## Rate limits drive everything
 
