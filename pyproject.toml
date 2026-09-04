@@ -1,6 +1,6 @@
 [project]
 name = "parcelapp-mcp"
-version = "0.2.0"
+dynamic = ["version"]
 description = "MCP server for the Parcel delivery tracking app: read and add deliveries over stdio or HTTP"
 readme = "README.md"
 license = "MIT"
@@ -53,8 +53,17 @@ Issues = "https://github.com/obeone/parcelapp-mcp/issues"
 parcelapp-mcp = "parcel_mcp.server:main"
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
+
+# The version is derived from the nearest git tag. Two consequences worth
+# knowing before you debug a wrong version number:
+#   - a shallow clone has no tags, so the build silently produces a dev
+#     version. Every checkout that builds this package needs fetch-depth 0.
+#   - a build without .git at all fails outright, which is why the Dockerfile
+#     passes SETUPTOOLS_SCM_PRETEND_VERSION.
+[tool.hatch.version]
+source = "vcs"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/parcel_mcp"]
