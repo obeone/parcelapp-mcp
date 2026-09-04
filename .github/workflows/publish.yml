@@ -1,13 +1,18 @@
 name: Publish
 
 on:
-  release:
-    types: [published]
+  push:
+    tags: ["v*"]
 
+# One tag drives the whole release: PyPI, then the GitHub release, then the
+# changelog commit. It is deliberately not split across two workflows, because
+# a release created with the GITHUB_TOKEN does not trigger anything else --
+# GitHub suppresses that cascade on purpose -- so a `release: published` hook
+# would simply never fire.
+#
 # Publishing is irreversible: PyPI never lets a version number be reused, even
-# after a yank. So the build job re-runs the full check suite and refuses a tag
-# that disagrees with the version in pyproject.toml, and only then does the
-# publish job get an OIDC token.
+# after a yank. So the build job runs the full check suite first, and only a
+# later job gets an OIDC token.
 
 permissions: {}
 
@@ -17,6 +22,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # hatch-vcs reads the version from the nearest tag and git-cliff walks
+          # the history for the notes. A shallow checkout has neither, and would
+          # quietly produce a dev version instead of failing.
+          fetch-depth: 0
+
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
@@ -30,12 +41,13 @@ jobs:
       - name: Build the sdist and the wheel
         run: uv build
 
-      # The release tag is the only place the version is stated twice. A
-      # mismatch here means a tag pointing at the wrong commit, which would
-      # otherwise burn the version silently.
-      - name: Check the release tag against the package version
+      # With hatch-vcs the version is derived from the tag, so this normally
+      # agrees by construction. It stays because the ways it can disagree are
+      # exactly the ways hatch-vcs fails quietly: a shallow fetch, or a tag that
+      # is not on the commit being built, both of which yield a .devN version.
+      - name: Check the release tag against the built version
         env:
-          TAG: ${{ github.event.release.tag_name }}
+          TAG: ${{ github.ref_name }}
         run: |
           version="${TAG#v}"
           if [ ! -f "dist/parcelapp_mcp-${version}.tar.gz" ]; then
@@ -47,13 +59,26 @@ jobs:
       - name: Check the metadata renders on PyPI
         run: uvx twine check --strict dist/*
 
+      # The same cliff.toml that generates CHANGELOG.md, so the release page and
+      # the file cannot drift. The leading "## <version> - <date>" heading is
+      # dropped: the release is already titled with its tag.
+      - name: Generate the release notes
+        run: |
+          # sed, in order: drop the leading "## <version> - <date>" heading,
+          # then drop the blank lines it leaves behind at the top.
+          uvx git-cliff --latest --strip all \
+            | sed -e '1{/^## /d;}' -e '/./,$!d' > release-notes.md
+          cat release-notes.md
+
       - uses: actions/upload-artifact@v7
         with:
-          name: dist
-          path: dist/
+          name: release
+          path: |
+            dist/
+            release-notes.md
           if-no-files-found: error
 
-  publish:
+  pypi:
     name: Publish to PyPI
     needs: build
     runs-on: ubuntu-latest
@@ -68,6 +93,62 @@ jobs:
     steps:
       - uses: actions/download-artifact@v8
         with:
-          name: dist
-          path: dist/
+          name: release
       - uses: pypa/gh-action-pypi-publish@v1.14.2
+
+  release:
+    name: GitHub release and changelog
+    # Last on purpose: a release must not announce a package that failed to
+    # upload. The reverse order leaves a dangling release; this order at worst
+    # leaves a published package with no release notes, which is fixable.
+    needs: pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # creates the release and pushes the changelog commit
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # main, not the tag: the changelog commit belongs on the branch. The
+          # full history still gives git-cliff the tag it needs.
+          ref: main
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v10.0.1
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: release
+          # Outside the checkout: the release notes are a build artifact, not
+          # something that should show up as an untracked file in the commit
+          # this job is about to make.
+          path: artifacts
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file artifacts/release-notes.md \
+            artifacts/dist/*
+
+      # Regenerated rather than appended, so a reworded history stays reflected.
+      # The commit is a chore(release), which cliff.toml skips, so it never shows
+      # up in the next changelog.
+      - name: Update CHANGELOG.md on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          uvx git-cliff -o CHANGELOG.md
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md already up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "chore(release): update the changelog for ${TAG}"
+          # main may have moved while the package was uploading.
+          git pull --rebase --autostash
+          git push
