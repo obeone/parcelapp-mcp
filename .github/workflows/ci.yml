@@ -15,6 +15,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          # hatch-vcs reads the version from the nearest tag, and uv sync
+          # builds the project. A shallow clone has no tags and yields a
+          # meaningless 0.1.devN.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
@@ -32,6 +37,11 @@ jobs:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
+        with:
+          # hatch-vcs reads the version from the nearest tag, and uv sync
+          # builds the project. A shallow clone has no tags and yields a
+          # meaningless 0.1.devN.
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@v10.0.1
         with:
           enable-cache: true
