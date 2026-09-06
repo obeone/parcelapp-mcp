@@ -20,6 +20,8 @@ jobs:
   build:
     name: Build and verify
     runs-on: ubuntu-latest
+    permissions:
+      contents: read # the workflow-level default is nothing, and checkout needs this
     steps:
       - uses: actions/checkout@v7
         with:
