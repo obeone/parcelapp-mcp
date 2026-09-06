@@ -3,7 +3,7 @@
 Generated from the Conventional Commits in the git history. Do not edit by
 hand: run `uvx git-cliff -o CHANGELOG.md` instead.
 
-## Unreleased
+## 0.2.0 - 2026-09-06
 
 ### Features
 
@@ -25,6 +25,7 @@ hand: run `uvx git-cliff -o CHANGELOG.md` instead.
 - Add the MIT licence and rewrite the README for publication
 - Rewrite the README for the two transports
 - Record the HTTP-transport invariants in CLAUDE.md
+- Generate the changelog from the conventional commits
 
 ### Tests
 
@@ -33,10 +34,14 @@ hand: run `uvx git-cliff -o CHANGELOG.md` instead.
 ### Build and CI
 
 - Publish to PyPI on a released tag
+- Derive the version from the git tag
+- Drive the whole release from a tag push
+- Grant the publish build job contents read
 
 ### Chores
 
 - Add ruff, strict mypy and a CI workflow
 - Untrack the design brief
 - Fill in the package, image and repository metadata
+- Ignore the local worktrees directory
 
