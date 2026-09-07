@@ -1,0 +1,95 @@
+name: Image
+
+on:
+  push:
+    tags: ["v*"]
+
+# Images follow releases and nothing else, so the registries carry one image per
+# published version and never a moving snapshot of main.
+
+permissions: {}
+
+jobs:
+  image:
+    name: Build and push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # pushes to ghcr.io
+      id-token: write # signs the provenance attestation
+      attestations: write
+    env:
+      # Docker Hub is optional. Without the secrets the job still publishes to
+      # GHCR instead of dying at a login step, which matters because the two
+      # registries have completely different failure modes: GHCR authenticates
+      # with the GITHUB_TOKEN and cannot be misconfigured, Docker Hub needs a
+      # token somebody has to create and rotate by hand.
+      DOCKERHUB_ENABLED: ${{ secrets.DOCKERHUB_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # arm64 is emulated: this repository has no arm runner, and the image is
+      # small enough that the emulation cost is a few minutes, not an hour.
+      - uses: docker/setup-qemu-action@v4.3.0
+      - uses: docker/setup-buildx-action@v4.3.0
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to Docker Hub
+        if: env.DOCKERHUB_ENABLED == 'true'
+        uses: docker/login-action@v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # The build context has no .git (.dockerignore excludes it) and the
+      # package version is derived from the git tag, so hatchling cannot work it
+      # out inside the container. The tag name is the only source available.
+      - name: Derive the version from the tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute tags and labels
+        id: meta
+        uses: docker/metadata-action@v6.2.0
+        with:
+          images: |
+            ghcr.io/obeone/parcelapp-mcp
+            name=docker.io/obeoneorg/parcelapp-mcp,enable=${{ env.DOCKERHUB_ENABLED }}
+          # The default flavor is latest=auto, which moves `latest` only for a
+          # non-prerelease semver tag. A v1.0.0-rc1 therefore publishes its own
+          # tags without becoming what a bare `docker pull` gets.
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+
+      # BuildKit's own linter, before spending several minutes on two
+      # architectures to discover a warning that was visible up front.
+      - name: Check the Dockerfile
+        run: docker buildx build --check .
+
+      - name: Build and push
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.value }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Attestations only survive a push to a registry; they are dropped
+          # silently by a local load. mode=max records the build arguments, which
+          # is safe here because VERSION is the only one and it is public.
+          sbom: true
+          provenance: mode=max
