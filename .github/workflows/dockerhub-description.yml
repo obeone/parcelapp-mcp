@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths: ["README.md", ".github/workflows/dockerhub-description.yml"]
+  workflow_call:
   workflow_dispatch:
 
 # Docker Hub's description is the README, kept in step with main rather than
@@ -77,4 +78,8 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
           repository: obeoneorg/parcelapp-mcp
           readme-filepath: ./README.dockerhub.md
-          short-description: ${{ github.event.repository.description }}
+          # Spelled out rather than reused from the GitHub repository
+          # description, which is far longer than the 100 characters Docker Hub
+          # accepts and was arriving truncated mid-sentence. Quoted because it
+          # contains a colon.
+          short-description: "MCP server for Parcel delivery tracking: read and add parcels over stdio or HTTP"
