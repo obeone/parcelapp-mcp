@@ -3,6 +3,20 @@
 Generated from the Conventional Commits in the git history. Do not edit by
 hand: run `uvx git-cliff -o CHANGELOG.md` instead.
 
+## 0.2.1 - 2026-09-08
+
+### Documentation
+
+- Rewrite the README around the published artefacts
+- Document how to verify the image signatures
+
+### Build and CI
+
+- Publish the image to GHCR and Docker Hub on a tag
+- Sign the published images with cosign
+- Keep the Docker Hub description in step with the README
+- Drop the Mermaid diagram from the Docker Hub description
+- Make the Docker Hub description sync actually reachable
 ## 0.2.0 - 2026-09-06
 
 ### Features
