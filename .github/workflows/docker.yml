@@ -116,3 +116,17 @@ jobs:
             echo "Signing ${image}@${DIGEST}"
             cosign sign --yes "${image}@${DIGEST}"
           done
+
+  # Docker Hub has no repository to describe until an image creates one, so the
+  # very first sync has to happen here. Later README edits are picked up by the
+  # same workflow's own push trigger.
+  description:
+    name: Sync the Docker Hub description
+    needs: image
+    uses: ./.github/workflows/dockerhub-description.yml
+    secrets: inherit
+    # A called workflow cannot ask for more than its caller holds, and this
+    # workflow grants nothing by default, so the checkout permission has to be
+    # handed down explicitly here.
+    permissions:
+      contents: read
