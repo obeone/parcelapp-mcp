@@ -27,10 +27,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Docker Hub resolves no relative path, so a link that works on GitHub
-      # lands as a dead one there. Rewritten rather than hand-maintained, so a
-      # link added to the README later cannot silently rot on the registry.
-      - name: Rewrite relative links to absolute ones
+      # Two things GitHub renders and Docker Hub does not: relative links, and
+      # Mermaid. Both are fixed up here rather than hand-maintained, so a link or
+      # a diagram added to the README later cannot silently rot on the registry.
+      - name: Adapt the README for Docker Hub
         run: |
           python3 - <<'PY'
           import pathlib
@@ -53,6 +53,18 @@ jobs:
 
           source = pathlib.Path("README.md").read_text()
           rewritten = re.sub(r"(!?)\[([^\]]*)\]\(([^)\s]+)\)", absolute, source)
+
+          # Docker Hub renders no Mermaid, so the diagram would arrive as a wall
+          # of raw flowchart source. Replaced by a pointer rather than deleted,
+          # so the Architecture section does not lose its subject.
+          rewritten = re.sub(
+              r"^```mermaid\n.*?^```\n",
+              "_The architecture diagram renders on "
+              "[the GitHub README](https://github.com/obeone/parcelapp-mcp#readme)._\n",
+              rewritten,
+              flags=re.DOTALL | re.MULTILINE,
+          )
+
           pathlib.Path("README.dockerhub.md").write_text(rewritten)
           PY
           diff -u README.md README.dockerhub.md || true
