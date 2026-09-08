@@ -80,6 +80,17 @@ Images are published on every `v*` tag, for `linux/amd64` and `linux/arm64`, to
 both `ghcr.io/obeone/parcelapp-mcp` and `docker.io/obeoneorg/parcelapp-mcp`, with
 an SBOM and a provenance attestation attached.
 
+Every image is signed with [cosign](https://docs.sigstore.dev/cosign/), keylessly:
+there is no public key to distribute, the signature is bound to the workflow that
+produced it and recorded in Sigstore's public transparency log. Check one before
+you run it:
+
+```bash
+cosign verify ghcr.io/obeone/parcelapp-mcp:0.2.0 \
+  --certificate-identity-regexp '^https://github.com/obeone/parcelapp-mcp/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
 To build it yourself instead:
 
 ```bash
