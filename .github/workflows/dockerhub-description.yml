@@ -1,0 +1,68 @@
+name: Docker Hub description
+
+on:
+  push:
+    branches: [main]
+    paths: ["README.md", ".github/workflows/dockerhub-description.yml"]
+  workflow_dispatch:
+
+# Docker Hub's description is the README, kept in step with main rather than
+# with the release tags: an edit to the README should reach the registry when it
+# lands, not weeks later when someone happens to cut a version.
+#
+# It is a separate workflow from docker.yml for a mechanical reason: a `paths`
+# filter applies to the whole push event, so folding this trigger into the image
+# workflow would make a tag push that does not touch README.md skip the build.
+
+permissions: {}
+
+jobs:
+  description:
+    name: Push the README to Docker Hub
+    runs-on: ubuntu-latest
+    # Nothing to push to if the credentials were never configured.
+    if: vars.DOCKERHUB_USERNAME != ''
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      # Docker Hub resolves no relative path, so a link that works on GitHub
+      # lands as a dead one there. Rewritten rather than hand-maintained, so a
+      # link added to the README later cannot silently rot on the registry.
+      - name: Rewrite relative links to absolute ones
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          import re
+
+          BLOB = "https://github.com/obeone/parcelapp-mcp/blob/main/"
+          RAW = "https://raw.githubusercontent.com/obeone/parcelapp-mcp/main/"
+
+
+          def absolute(match: re.Match[str]) -> str:
+              """Rewrite one Markdown link or image target, if it is relative."""
+              bang, text, target = match.group(1), match.group(2), match.group(3)
+              # Absolute URLs, anchors and mail links are already portable.
+              if re.match(r"^(https?:|mailto:|#|/)", target):
+                  return match.group(0)
+              # An image has to resolve to the file itself, a link to its page.
+              base = RAW if bang else BLOB
+              return f"{bang}[{text}]({base}{target.lstrip('./')})"
+
+
+          source = pathlib.Path("README.md").read_text()
+          rewritten = re.sub(r"(!?)\[([^\]]*)\]\(([^)\s]+)\)", absolute, source)
+          pathlib.Path("README.dockerhub.md").write_text(rewritten)
+          PY
+          diff -u README.md README.dockerhub.md || true
+
+      - uses: peter-evans/dockerhub-description@v5.0.0
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          # Needs read/write/delete scope: a read/write token is refused by the
+          # description endpoint.
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          repository: obeoneorg/parcelapp-mcp
+          readme-filepath: ./README.dockerhub.md
+          short-description: ${{ github.event.repository.description }}
