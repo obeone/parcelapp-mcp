@@ -70,3 +70,4 @@ assert b'\"result\"' in u.urlopen(r, timeout=4).read()" || exit 1
 # Exec form, so the server is PID 1 and receives SIGTERM directly. uvicorn
 # installs its own handler and drains, so no init shim is needed.
 CMD ["parcelapp-mcp"]
+|
