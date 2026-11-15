@@ -96,7 +96,7 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: release
-      - uses: pypa/gh-action-pypi-publish@v1.14.2
+      - uses: pypa/gh-action-pypi-publish@v1.14.3
 
   release:
     name: GitHub release and changelog
