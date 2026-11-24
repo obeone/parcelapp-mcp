@@ -3,6 +3,11 @@
 Generated from the Conventional Commits in the git history. Do not edit by
 hand: run `uvx git-cliff -o CHANGELOG.md` instead.
 
+## 0.3.1 - 2026-11-24
+
+### Bug fixes
+
+- Drop the stray pipe that broke the image build
 ## 0.3.0 - 2026-11-24
 
 ### Features
