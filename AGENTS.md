@@ -43,6 +43,12 @@ docker build --build-arg VERSION=$(git describe --tags --abbrev=0 | sed s/^v//) 
   -t parcelapp-mcp . && docker run -p 8000:8000 parcelapp-mcp
 ```
 
+The image builds on Docker Hardened Images (`dhi.io/python:3.13-dev` to build,
+`dhi.io/python:3.13` to run). `dhi.io` refuses anonymous pulls, so every machine and
+docker context that builds it needs `docker login dhi.io` first; CI logs in with the
+Docker Hub credentials. The runtime image has no shell: no `RUN`, no shell-form
+`HEALTHCHECK`/`CMD`, and the venv is built in the first stage and copied over whole.
+
 `uv run pytest` is the loop to work in: it never touches the network, so it costs
 nothing from either rate-limit budget. The two `scripts/` entries do hit the real API
 and are manual checks, not part of the suite.

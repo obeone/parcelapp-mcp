@@ -95,6 +95,7 @@ cosign verify ghcr.io/obeone/parcelapp-mcp:0.2.0 \
 To build it yourself instead:
 
 ```bash
+docker login dhi.io   # once, with any Docker Hub account
 docker build -t parcelapp-mcp \
   --build-arg VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')" .
 docker run -p 8000:8000 parcelapp-mcp
@@ -102,7 +103,10 @@ docker run -p 8000:8000 parcelapp-mcp
 
 The `VERSION` build argument matters: `.dockerignore` excludes `.git`, and the
 package version is derived from the git tag, so without it the build still
-succeeds but reports version `0.0.0`.
+succeeds but reports version `0.0.0`. The login is needed because the image is
+built on [Docker Hardened Images](https://docs.docker.com/dhi/), which are free
+but refuse anonymous pulls. The runtime image has no shell, so `docker exec -it
+... sh` will not work; use `--entrypoint python` to poke around instead.
 
 Call it with your key in a header (use `127.0.0.1`, not `localhost`: on
 macOS `localhost` resolves to `::1` first, and `-p 8000:8000` only publishes
