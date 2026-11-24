@@ -3,6 +3,20 @@
 Generated from the Conventional Commits in the git history. Do not edit by
 hand: run `uvx git-cliff -o CHANGELOG.md` instead.
 
+## 0.3.0 - 2026-11-24
+
+### Features
+
+- Add prompts for tracking, arrivals and delivery checks
+
+### Bug fixes
+
+- Remove trailing newline
+
+### Documentation
+
+- Consolidate project instructions in AGENTS.md
+- Document the MCP prompts
 ## 0.2.1 - 2026-09-08
 
 ### Documentation
