@@ -92,10 +92,22 @@ cosign verify ghcr.io/obeone/parcelapp-mcp:0.2.0 \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
-To build it yourself instead:
+#### Building the image yourself
+
+> [!IMPORTANT]
+> The image is built on [Docker Hardened Images](https://docs.docker.com/dhi/)
+> (`dhi.io/python:3.13`). They are free, but `dhi.io` refuses anonymous pulls:
+> without a login, the build fails on its first `FROM` with a `401 Unauthorized`.
+> You need a Docker account, nothing more.
+
+Log in once per machine (and once per Docker context, if you build on a remote
+one). Use your Docker Hub username with your password or, better, a
+[personal access token](https://docs.docker.com/security/access-tokens/); read-only
+access is enough. Logging in to Docker Hub itself does not cover `dhi.io`: it is a
+separate registry and needs its own login.
 
 ```bash
-docker login dhi.io   # once, with any Docker Hub account
+docker login dhi.io
 docker build -t parcelapp-mcp \
   --build-arg VERSION="$(git describe --tags --abbrev=0 | sed 's/^v//')" .
 docker run -p 8000:8000 parcelapp-mcp
@@ -103,10 +115,15 @@ docker run -p 8000:8000 parcelapp-mcp
 
 The `VERSION` build argument matters: `.dockerignore` excludes `.git`, and the
 package version is derived from the git tag, so without it the build still
-succeeds but reports version `0.0.0`. The login is needed because the image is
-built on [Docker Hardened Images](https://docs.docker.com/dhi/), which are free
-but refuse anonymous pulls. The runtime image has no shell, so `docker exec -it
-... sh` will not work; use `--entrypoint python` to poke around instead.
+succeeds but reports version `0.0.0`.
+
+The runtime image has no shell and no package manager, and runs as the
+unprivileged user `65532`. `docker exec -it <container> sh` will not work; start
+a throwaway container with `--entrypoint python` to look around instead.
+
+If you fork the repository and want the release workflow to build images, it
+logs in to `dhi.io` with the same `DOCKERHUB_USERNAME` variable and
+`DOCKERHUB_TOKEN` secret it uses to push to Docker Hub, so both must be set.
 
 Call it with your key in a header (use `127.0.0.1`, not `localhost`: on
 macOS `localhost` resolves to `::1` first, and `-p 8000:8000` only publishes
