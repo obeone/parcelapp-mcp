@@ -3,6 +3,19 @@
 Generated from the Conventional Commits in the git history. Do not edit by
 hand: run `uvx git-cliff -o CHANGELOG.md` instead.
 
+## 0.3.2 - 2026-11-24
+
+### Documentation
+
+- Point the mcp version check at 2.2.x
+
+### Build and CI
+
+- Bump pypa/gh-action-pypi-publish in /.github/workflows
+- Bump pyjwt from 2.13.0 to 2.15.0
+- Bump mcp from 2.1.1 to 2.2.0
+- Bump certifi from 2026.7.22 to 2026.10.18
+- Bump opentelemetry-api from 1.44.0 to 1.45.2
 ## 0.3.1 - 2026-11-24
 
 ### Bug fixes
