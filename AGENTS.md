@@ -6,7 +6,8 @@ Canonical project instructions for coding agents. Maintain shared guidance here.
 
 An MCP server wrapping the [Parcel](https://parcelapp.net) delivery-tracking API,
 which premium users of the macOS/iOS app get access to. Two upstream endpoints plus a
-public carrier-code list, exposed as three MCP tools and one resource template.
+public carrier-code list, exposed as three MCP tools and one resource template, plus
+three prompts that walk the model through the tools in budget-aware order.
 
 It serves two transports. stdio reads the key from the environment. HTTP takes it
 per request, which turns process-global state into a leak and drives most of the
@@ -29,7 +30,7 @@ The project uses `uv`. The API key comes from `envchain parcel` locally.
 
 ```bash
 uv sync                                       # install deps and the dev group
-uv run pytest                                 # 80 tests, no network
+uv run pytest                                 # 90 tests, no network
 uv run pytest tests/test_tools.py::test_add_delivery_demands_a_postcode_without_spending_a_request
 uv run ruff check && uv run ruff format       # lint, then format
 uv run mypy                                   # strict, and currently clean
@@ -124,8 +125,15 @@ knows nothing about HTTP. Resist adding a third for three tools.
 
 `src/parcel_mcp/server.py` — the MCP surface:
 
-- The `MCPServer` instance, the three tools, the resource template, the argparse
-  transport selection, `main()`.
+- The `MCPServer` instance, the three tools, the resource template, the three
+  prompts, the argparse transport selection, `main()`.
+- Prompts only render text and never touch the network. Their value is ordering:
+  free checks first, and an explicit user go-ahead before `add_delivery`. Prompt
+  and argument descriptions go in the decorator and in `Field`, since the SDK
+  would otherwise publish the whole docstring, `Args:` block included.
+- Each prompt renders a single user message in the user's own voice, with no
+  tool or parameter names: the client shows it as something the user typed. No
+  assistant turns either, since clients do not all handle them the same way.
 - `resolve_api_key(ctx)` decides where the key comes from: an `X-Parcel-Token` or
   `Authorization: Bearer` header first, the environment as fallback. That fallback
   is what lets one code path serve both transports.
