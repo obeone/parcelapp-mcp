@@ -21,6 +21,7 @@ This project is not affiliated with or endorsed by Parcel.
 | ➕ | Add a delivery | Validated locally first, so a typo never spends part of the daily quota |
 | 🔍 | Search carriers | Free, unrated lookup from code or name to the internal carrier code |
 | 📡 | Resource template | `parcel://deliveries/{filter_mode}` for passive reads alongside the tools |
+| 💬 | Prompts | Ready-made workflows: track a parcel, what's arriving, check one delivery |
 | 🔐 | Two auth modes | Environment variable over stdio, per-request header over HTTP |
 | 🚦 | Rate-limit awareness | Every result reports an honest, locally-tracked budget estimate |
 | 🐳 | Container-ready | Ships a Dockerfile for the HTTP transport, no key baked in |
@@ -170,6 +171,15 @@ text a model actually reads at call time):
 
 Plus one resource template, `parcel://deliveries/{filter_mode}` (`active` or
 `recent`), for reading the same listing without a tool call.
+
+Three prompts package the common workflows. They only render instructions, so
+picking one costs no request; the tools they lead to spend the usual budgets.
+
+| Prompt | Arguments | What it does |
+| --- | --- | --- |
+| `track_parcel` | `tracking_number`, optional `description` and `carrier` | Finds the carrier, asks for any required postcode or email, and waits for a go-ahead before `add_delivery` |
+| `arriving_soon` | none | One `list_deliveries` call for active parcels, soonest first, flagging stuck ones |
+| `check_delivery` | `query` | Finds one delivery by label or tracking number and explains its events |
 
 Every result carries a `rate_limit` block. Parcel publishes no rate-limit
 headers, so the figures are counted locally by this server and reported as
