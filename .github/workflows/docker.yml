@@ -24,6 +24,8 @@ jobs:
       # registries have completely different failure modes: GHCR authenticates
       # with the GITHUB_TOKEN and cannot be misconfigured, Docker Hub needs a
       # token somebody has to create and rotate by hand.
+      # Only the push is optional, though: the base image comes from dhi.io,
+      # which takes the same Docker Hub credentials and refuses anonymous pulls.
       DOCKERHUB_ENABLED: ${{ vars.DOCKERHUB_USERNAME != '' && secrets.DOCKERHUB_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v7
@@ -39,6 +41,15 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Unconditional on purpose: without credentials the build cannot pull its
+      # base image, and failing here names the cause, the build step would not.
+      - name: Log in to Docker Hardened Images
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Log in to Docker Hub
         if: env.DOCKERHUB_ENABLED == 'true'
