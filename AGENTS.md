@@ -58,10 +58,7 @@ unmocked request fails the test rather than escaping to the real API.
 
 CI (`.github/workflows/ci.yml`) runs those same three commands: lint and types once,
 tests across 3.10 to 3.13. It uses `uv sync --locked`, so a dependency change means
-committing the refreshed `uv.lock` alongside it. A third job builds the amd64
-image without pushing it and runs it until its `HEALTHCHECK` passes. It needs the
-dhi.io credentials, so it skips with a warning on fork and Dependabot pull requests
-unless `DOCKERHUB_TOKEN` is also set as a Dependabot secret.
+committing the refreshed `uv.lock` alongside it.
 
 ## Releasing
 
