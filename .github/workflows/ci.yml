@@ -48,3 +48,73 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked
       - run: uv run pytest
+
+  # Builds the image the release workflow would publish, without pushing it,
+  # then runs it until its own HEALTHCHECK (a real MCP handshake) passes. A
+  # broken Dockerfile or a dependency bump that breaks the HTTP transport shows
+  # up on the pull request instead of on the next tag.
+  image:
+    name: Docker image
+    runs-on: ubuntu-latest
+    env:
+      # dhi.io refuses anonymous pulls. Dependabot runs only see Dependabot
+      # secrets, and fork pull requests see none, so without credentials the
+      # build is skipped with a warning rather than failing a check nobody can
+      # fix from there. The username falls back to a secret because GitHub does
+      # not document whether Dependabot runs can read variables.
+      DHI_USERNAME: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
+      DHI_ENABLED: ${{ (vars.DOCKERHUB_USERNAME != '' || secrets.DOCKERHUB_USERNAME != '') && secrets.DOCKERHUB_TOKEN != '' }}
+    steps:
+      - name: Explain the skip
+        if: env.DHI_ENABLED != 'true'
+        run: echo "::warning::No dhi.io credentials in this run (fork or Dependabot pull request?), the image build is skipped."
+
+      - uses: actions/checkout@v7
+        if: env.DHI_ENABLED == 'true'
+
+      - uses: docker/setup-buildx-action@v4.3.0
+        if: env.DHI_ENABLED == 'true'
+
+      - name: Log in to Docker Hardened Images
+        if: env.DHI_ENABLED == 'true'
+        uses: docker/login-action@v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ env.DHI_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Check the Dockerfile
+        if: env.DHI_ENABLED == 'true'
+        run: docker buildx build --check .
+
+      # amd64 only: loading into the local daemon takes a single platform, and
+      # emulating arm64 would cost minutes on every pull request for a
+      # pure-Python image. The release workflow still builds both.
+      - name: Build
+        if: env.DHI_ENABLED == 'true'
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: parcelapp-mcp:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run until healthy
+        if: env.DHI_ENABLED == 'true'
+        run: |
+          docker run -d --name parcelapp-mcp parcelapp-mcp:ci
+          # start-period 10s plus three 30s intervals is the worst case before
+          # Docker itself gives up, so two minutes covers it.
+          for _ in $(seq 1 60); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' parcelapp-mcp)
+            [ "$status" = starting ] || break
+            sleep 2
+          done
+          echo "Health: $status"
+          if [ "$status" != healthy ]; then
+            docker logs parcelapp-mcp
+            exit 1
+          fi
