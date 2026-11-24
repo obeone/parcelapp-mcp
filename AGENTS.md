@@ -148,7 +148,7 @@ knows nothing about HTTP. Resist adding a third for three tools.
   replaces the message with a generic "Error executing tool" and the model learns
   nothing. Do not reparent it to `Exception`.
 - **mcp 2.x API: `MCPServer`, not `FastMCP`.** The v1 spelling is gone. Do not
-  reintroduce it from memory; check the installed version (`mcp` 2.1.x) when unsure.
+  reintroduce it from memory; check the installed version (`mcp` 2.2.x) when unsure.
 - **Docstrings are the tool contracts.** They are the text the model actually reads.
   Keep them describing behaviour, arguments and rate limits, not implementation.
 - **Errors name the fix.** "Bpost requires a postcode; pass `postcode`" beats
