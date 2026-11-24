@@ -58,7 +58,10 @@ unmocked request fails the test rather than escaping to the real API.
 
 CI (`.github/workflows/ci.yml`) runs those same three commands: lint and types once,
 tests across 3.10 to 3.13. It uses `uv sync --locked`, so a dependency change means
-committing the refreshed `uv.lock` alongside it.
+committing the refreshed `uv.lock` alongside it. A third job builds the amd64
+image without pushing it and runs it until its `HEALTHCHECK` passes. It needs the
+dhi.io credentials, so it skips with a warning on fork and Dependabot pull requests
+unless `DOCKERHUB_TOKEN` is also set as a Dependabot secret.
 
 ## Releasing
 
@@ -154,7 +157,7 @@ knows nothing about HTTP. Resist adding a third for three tools.
   replaces the message with a generic "Error executing tool" and the model learns
   nothing. Do not reparent it to `Exception`.
 - **mcp 2.x API: `MCPServer`, not `FastMCP`.** The v1 spelling is gone. Do not
-  reintroduce it from memory; check the installed version (`mcp` 2.1.x) when unsure.
+  reintroduce it from memory; check the installed version (`mcp` 2.2.x) when unsure.
 - **Docstrings are the tool contracts.** They are the text the model actually reads.
   Keep them describing behaviour, arguments and rate limits, not implementation.
 - **Errors name the fix.** "Bpost requires a postcode; pass `postcode`" beats

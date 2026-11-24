@@ -177,7 +177,8 @@ Each CLI flag mirrors one of these: `--transport`, `--host`, `--port`,
 | `envchain parcel uv run scripts/http_test.py` | Live check against a running HTTP server |
 
 CI runs lint, type-check and the test matrix (Python 3.10 to 3.13) on every
-push and pull request against `main`.
+push and pull request against `main`, then builds the Docker image (amd64, not
+pushed) and runs it until its health check passes.
 
 ## 📡 API
 
