@@ -8,7 +8,8 @@ Two upstream endpoints are wrapped:
 A third tool searches the public carrier-code list, since both endpoints speak
 in internal carrier codes rather than human names, and a
 ``parcel://deliveries/{filter_mode}`` resource exposes the same listing for
-passive reading.
+passive reading. Three prompts package the common workflows (tracking a new
+parcel, what is arriving, checking one delivery) in budget-aware order.
 
 This module holds the MCP surface only: the tool definitions, whose docstrings
 are the contract the model reads, and the two tables that turn the API's
@@ -27,10 +28,11 @@ import json
 import logging
 import os
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp_types import ToolAnnotations
+from pydantic import Field
 
 from .client import (
     ADD_BUCKET,
@@ -417,6 +419,122 @@ def deliveries_resource(filter_mode: str, ctx: Context | None = None) -> str:
         },
         indent=2,
         ensure_ascii=False,
+    )
+
+
+# Prompts are user-picked templates: they only render text and never touch the
+# network, so they spend nothing from either budget. Their job is to steer the
+# model through the tools in the order the rate limits demand.
+#
+# Each renders one plain user message, written the way the user would type it:
+# the client drops it into the conversation as theirs. No assistant turns and no
+# tool or parameter names, since clients differ in how they handle the former
+# and the model already knows the latter from the tool list.
+
+
+@mcp.prompt(
+    title="Track a new parcel",
+    description=(
+        "Add a tracking number to Parcel: find the carrier, gather any required "
+        "postcode or email, and confirm before spending the daily add budget."
+    ),
+)
+def track_parcel(
+    tracking_number: Annotated[str, Field(description="The tracking number to add.")],
+    description: Annotated[
+        str, Field(description="Label to show in the Parcel app. Optional.")
+    ] = "",
+    carrier: Annotated[
+        str, Field(description="Carrier name or code, if known, e.g. 'Colissimo'. Optional.")
+    ] = "",
+) -> str:
+    """Render the step-by-step brief for adding a delivery.
+
+    The order of the steps is the point: add_delivery has 20 requests a day,
+    failed attempts included, so every check that can fail locally comes first
+    and the user confirms before the one request that costs.
+
+    Args:
+        tracking_number: The tracking number the user wants to follow.
+        description: Label for the app. When empty, the model asks for one or
+            proposes one.
+        carrier: A carrier hint. When empty, the model asks rather than guessing.
+
+    Returns:
+        The instructions, sent to the model as a single user message.
+    """
+    label = description.strip()
+    name = carrier.strip()
+    request_line = f"Add the parcel {tracking_number.strip()} to Parcel"
+    request_line += f', labelled "{label}".' if label else "."
+    if name:
+        request_line += f" The carrier is {name}."
+    else:
+        request_line += " I haven't said which carrier it is: ask me rather than guessing."
+    if not label:
+        request_line += " Suggest a short label too."
+    return (
+        f"{request_line}\n\n"
+        "Look the carrier up first. If several match, let me pick, and if it needs "
+        "a postcode or an email, ask me for it. Before adding, show me what you are "
+        "about to send and wait for my OK: Parcel only allows 20 additions a day, "
+        "and failed ones count."
+    )
+
+
+@mcp.prompt(
+    title="What's arriving",
+    description=(
+        "Summarise the deliveries still in flight, soonest first, and flag any that look stuck."
+    ),
+)
+def arriving_soon() -> str:
+    """Render the brief for an overview of in-flight deliveries.
+
+    Steers towards a single list_deliveries call, active and sorted by expected
+    date, since filtering and sorting are free but each fetch draws on the
+    hourly budget.
+
+    Returns:
+        The instructions, sent to the model as a single user message.
+    """
+    return (
+        "What parcels am I waiting for?\n\n"
+        "Give me one line per delivery still on its way, soonest first: label, "
+        "carrier, status, expected date and latest update. Then flag anything that "
+        "needs my attention, like a parcel out for delivery today, a failed "
+        "attempt, or one with no news for several days. One look at the list is "
+        "enough, no need to fetch it again."
+    )
+
+
+@mcp.prompt(
+    title="Check a delivery",
+    description="Find one delivery by its label or tracking number and explain where it stands.",
+)
+def check_delivery(
+    query: Annotated[str, Field(description="Part of the delivery's label or tracking number.")],
+) -> str:
+    """Render the brief for inspecting one delivery.
+
+    Says the parcel may already be delivered, steering towards the "recent"
+    listing so it is still found, and forbids falling back to add_delivery when
+    nothing matches: a
+    missing parcel is a question for the user, not a reason to spend the daily
+    budget.
+
+    Args:
+        query: Text matched against the delivery's label and tracking number.
+
+    Returns:
+        The instructions, sent to the model as a single user message.
+    """
+    return (
+        f'Where is my parcel "{query.strip()}"? It may already be delivered.\n\n'
+        "Find it by its label or tracking number and tell me where it stands, "
+        "walking me through its tracking history in plain words. If several "
+        "match, ask me which one I mean; if none does, say so and show me what "
+        "you found instead. Don't add anything to Parcel."
     )
 
 
